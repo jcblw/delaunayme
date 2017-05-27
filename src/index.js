@@ -94,14 +94,6 @@ function captureImage () {
   content.appendChild(newImg)
 }
 
-function loadImage (src, callback) {
-  status.innerText = 'loading image'
-  const img = new window.Image()
-  img.src = src
-  img.onload = callback.bind(null, null, img)
-  img.onerror = callback
-}
-
 document.addEventListener('DOMContentLoaded', function () {
   document.body.appendChild(layout)
 })
