@@ -1,28 +1,41 @@
+const React = require('react')
+const ReactDOM = require('react-dom')
 const Delaunator = require('delaunator')
-const domla = require('domla')
 const getusermedia = require('getusermedia')
-const findCorners = require('./find-corners')
-const centerOfTriangle = require('./center-of-triangle')
+const Application = require('./components/application')
+const findCorners = require('./lib/find-corners')
+const centerOfTriangle = require('./lib/center-of-triangle')
 
 const RESOLUTION = [640, 320]
 const [WIDTH, HEIGHT] = RESOLUTION
 // const RATIO = HEIGHT / WIDTH
 const POINT_AMOUNT = 1000
 
-const { div, canvas, video } = domla
+const appEl = document.getElementById('app')
+let el
+let context
+let mainCanvas
+let mainContext
+let videoEl
 
-const el = canvas({style: 'visibility:hidden;'})
-const context = el.getContext('2d')
-const largeEl = canvas({style: 'position:fixed;top:0;left:0;'})
-const largeContext = largeEl.getContext('2d')
-const content = div()
-const status = div()
-const videoEl = video({style: 'width:640px;height:360px;visibility:hidden;'})
-const layout = div({ className: 'textAlign-center container' },
-  el,
-  largeEl,
-  videoEl
-)
+function onRef(ref, type) {
+  if (!ref) {
+    return
+  }
+  switch(type) {
+    case 'video':
+      videoEl = ref
+      break
+    case 'mainCanvas':
+      mainCanvas = ref
+      mainContext = mainCanvas.getContext('2d')
+      break
+    case 'processingCanvas':
+      el = ref
+      context = mainCanvas.getContext('2d')
+      break
+  }
+}
 
 let mediaStream
 const mediaOptions = {
@@ -39,25 +52,27 @@ getusermedia(mediaOptions, function (err, stream) {
   mediaStream = stream
 })
 
-function onImageLoad (err, img) {
+function processFrame (err, img) {
   if (err) {
     status.innerText = err.message
     return
   }
   el.width = WIDTH / 2
   el.height = HEIGHT / 2
-  largeEl.width = window.innerWidth
-  largeEl.height = window.innerHeight
-  const ratioY = largeEl.height / el.height
-  const ratioX = largeEl.width / el.width
+  videoEl.width = el.width
+  videoEl.height = el.height
+  mainCanvas.width = window.innerWidth
+  mainCanvas.height = window.innerHeight
+  const ratioY = mainCanvas.height / el.height
+  const ratioX = mainCanvas.width / el.width
 
-  largeContext.clearRect(0, 0, largeEl.width, largeEl.height)
+  mainContext.clearRect(0, 0, mainCanvas.width, mainCanvas.height)
   context.clearRect(0, 0, el.width, el.height)
-  context.translate(el.width, 0)
-  context.scale(-1, 1)
+  // context.translate(el.width / 2, 0)
+  // context.scale(-1, 1)
   context.drawImage(img, 0, 0, el.width, el.height)
   const corners = findCorners(el, 1, POINT_AMOUNT)
-  const coords = corners.map(({x, y}) => [x * ratioX, y * ratioY])
+  const coords = corners.map(({x, y}) => [x, y])
   const triangles = new Delaunator(coords).triangles
   const build = []
   for (let i = 0; i < triangles.length; i += 3) {
@@ -68,16 +83,16 @@ function onImageLoad (err, img) {
     let x2 = coords[triangles[i + 2]][0]
     let y2 = coords[triangles[i + 2]][1]
     let center = centerOfTriangle(x0, y0, x1, y1, x2, y2)
-    let pixel = context.getImageData(center[0] / ratioX, center[1] / ratioY, 1, 1)
+    let pixel = context.getImageData(center[0], center[1], 1, 1)
     let data = pixel.data
     let rgb = `rgb(${data[0]}, ${data[1]}, ${data[2]})`
     build.push(function () {
-      largeContext.beginPath()
-      largeContext.moveTo(x0, y0)
-      largeContext.lineTo(x1, y1)
-      largeContext.lineTo(x2, y2)
-      largeContext.fillStyle = rgb
-      largeContext.fill()
+      context.beginPath()
+      context.moveTo(x0, y0)
+      context.lineTo(x1, y1)
+      context.lineTo(x2, y2)
+      context.fillStyle = rgb
+      context.fill()
     })
   }
   context.clearRect(0, 0, el.width, el.height)
@@ -85,7 +100,7 @@ function onImageLoad (err, img) {
 }
 
 function captureImage () {
-  const url = largeEl.toDataURL('image/png')
+  const url = mainCanvas.toDataURL('image/png')
   const newImg = new window.Image()
   newImg.src = url
   newImg.style = 'max-width:100%'
@@ -94,20 +109,20 @@ function captureImage () {
   content.appendChild(newImg)
 }
 
-document.addEventListener('DOMContentLoaded', function () {
-  document.body.appendChild(layout)
-})
+let src;
 
 function draw () {
-  if (mediaStream && !videoEl.src) {
-    videoEl.src = window.URL.createObjectURL(mediaStream)
-    videoEl.play()
+  if (mediaStream && videoEl && !videoEl.src) {
+    src = window.URL.createObjectURL(mediaStream)
   }
 
-  if (videoEl.src) {
-    onImageLoad(null, videoEl)
+  if (videoEl && videoEl.src) {
+    processFrame(null, videoEl)
+  } else {
+    ReactDOM.render(<Application onRef={onRef} src={src} />, appEl)
   }
   window.requestAnimationFrame(draw)
 }
+
 
 draw()
